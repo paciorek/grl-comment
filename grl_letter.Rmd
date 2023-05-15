@@ -1,0 +1,218 @@
+---
+title: "Comment on 'Five Decades of Observed Daily Precipitation Reveal Longer and More Variable Drought Events Across Much of the Western United States'"
+author: "Christopher J. Paciorek and Michael F. Wehner"
+output:
+  pdf_document: default
+---
+
+[WARNING: This document was a draft whose content have been copied to and finalized in grl_letter.tex, with final plotting code in grl_letter.R.]
+
+[see https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020GL091550 for example comment in form of GRL letter]
+
+## Abstract
+
+In a recent GRL letter, Zhang et al. (2021) present results on trends in daily precipitation patterns over the last five decades in the
+western United States. A key focus of their work is on meteorological drought, quantified based on time intervals in which daily precipitation never exceeds 3 mm. They report that mean and longest dry intervals (calculated at the annual or seasonal level) have increased
+across much of the southwestern U.S., with statistical assessment suggesting the results are statistically robust. However, Zhang et al. preprocess their annual (or seasonal) averages to compute five-year moving window averages before using established statistical techniques for trend analysis that assume independence about some fixed trend. Here we show that the use of the moving window preprocessing violates that independence assumption and inflates the statistical significance of their trend estimates. This raises questions about the robustness of their results of finding longer and more variable drought events. We conclude by discussing the difficulty of adjusting for the spatial structure in the data when trying to draw conclusions about the potential for systematic regional patterns of time trends. 
+
+## Plain Language Summary
+
+A recent paper reports trends in drought in the western United States, in particular increases in drought in the Southwestern United States, based on changes in the lengths of time intervals without precipitation. In this "comment" we note that preprocessing used by the authors artificially increases the apparent statistical signal in the data and caution that the evidence for the trends reported is not as strong as the authors claim. We conclude by discussing the difficulty of estimating trends in a statistically rigorous fashion across multiple weather stations. 
+
+## Main Text
+
+Zhang et al. present results on daily precipitation patterns over the last five decades in the western United States using precipitation data from GHCN weather stations. A key focus of their work is on meteorological drought, quantified based on time intervals in which daily precipitation never exceeds 3 mm. They report that mean and longest dry intervals (calculated at the annual or seasonal level) have increased across much of the southwestern U.S. The authors use Sen's slope (also known as the Theil-Sen estimator) to quantify trends and the Mann-Kendall test to quantify statistical significance.
+
+A key assumption of trend analysis using Sen's slope and the Mann-Kendall test is that the observations are independent about some fixed trend (Sen 1968). It is well-known that correlation can invalidate the Mann-Kendall test, such that the distribution of p-values is not uniform under the null hypothesis, with an inflated probability of detecting a non-existent trend, and there is extensive discussion of techniques for accounting for or reducing correlation (e.g., see Hamed and Rao 1998, Yue et al. 2002, Hamed 2009).
+
+We attempted to reproduce the results in Figure 3A, which presents station-specific trends in mean dry interval for 1976-2019. In discussions with the authors, we learned from them that for the trend analyses, they took yearly (or seasonal, for seasonal) averages and then computed the mean of those values within five-year moving windows. This was not described explicitly in the paper, although there are references to moving windows in Section 2 and the Figure 4 caption that can be read as specifically relating to the coefficient of variation (CV) calculation. The authors apparently used the standard Mann-Kendall test, as implemented in the mkttest function from the modifiedmk R package.
+
+What is the impact of using moving averages of the observations as opposed to the observations directly? Conceptually, it's clear that using moving averages (i.e., blocks of multiple values where the blocks overlap) introduces correlation by construction. So this raises the concern that the results on statistical significance may be distorted relative to direct use of the observations (and that the Sen's slope estimates may differ as well, although the impact of correlation on the slope is less clear conceptually).
+
+We can see the impact of smoothing the raw data before trend analysis by simple simulation. We simulated 1000 "time series" of 44 "years" of completely independent data, with no trend. We then used the standard Mann-Kendall test applied to five-year moving window averages, which gives 40 "years" of smoothed data. Fig. 1 (this letter) shows the p-values from the test and Sen's slope values with and without smoothing. It's clear that the p-values from the test when using smoothed data are not uniformly distributed and are bunched near zero compared to the uniformly-distributed p-values that we expect and see when applying the test to the unsmoothed data. Second, we note that under the null hypothesis, there does not seem to be a systematic effect on the Sen's slope values, although the estimates differ before and after smoothing.
+
+```{r, echo=FALSE}
+ma <- function(x, n = 5) {
+    cx <- c(0, cumsum(ifelse(is.na(x), 0, x)))
+    cn <- c(0, cumsum(ifelse(is.na(x), 0, 1)))
+    len <- length(cx)
+    rx <- cx[(n+1):len] - cx[1:(len - n)]
+    rn <- cn[(n+1):len] - cn[1:(len - n)]
+    rsum <- rx / rn
+    return(rsum)
+}
+```
+```{r, echo=FALSE}
+set.seed(1)
+n <- 44
+m <- 1000
+pvalues <- pvalues_smooth <- sens_slopes <- sens_slopes_smooth <- rep(0, m)
+
+for(i in 1:m) {
+    data <- rnorm(n)
+    ##    data <- rnorm(n, (1:n)/n, 1)  ## to add real slope
+    tmp <- modifiedmk::mkttest(data)
+    pvalues[i] <- tmp[5]
+    sens_slopes[i] <- tmp[2]
+    
+    data_smooth <- ma(data)
+    tmp <- modifiedmk::mkttest(data_smooth)
+    pvalues_smooth[i] <- tmp[5]
+    sens_slopes_smooth[i] <- tmp[2]
+}
+```
+
+```{r, echo = FALSE, fig.cap="Comparison of p-values (top row) and Sen's slope values (bottom row) for independent data and smoothed (five-year overlapping moving windows) data."}
+par(mfrow = c(2,3))
+hist(pvalues_smooth, main = '(a) p-values, smoothed data', xlab = 'p-values')
+hist(pvalues, main = '(b) p-values, yearly data', xlab = 'p-values')
+plot(pvalues, pvalues_smooth, main = '(c) comparison of p-values', pch = 16, cex = 0.6,
+   xlab = 'p-values, yearly data', ylab = 'p-values, smoothed data')
+hist(sens_slopes_smooth, main = "(d) Sen's slope, smoothed data", xlab = "Sen's slope")
+hist(sens_slopes, main = "(e) Sen's slope, yearly data", xlab = "Sen's slope")
+plot(sens_slopes, sens_slopes_smooth, main = "(f) comparison of Sen's slope", pch = 16, cex = 0.6,
+   xlab = "Sen's slope, yearly data", ylab = "Sen's slope, smoothed data")
+```
+
+To assess the impact of smoothing on the results of Zhang et al., we focus here on Fig. 3A as an example analysis. With gracious assistance from the authors regarding the details of handling missing observations and handling dry intervals that overlap two (water) years, we were able to essentially reproduce the results of Fig. 3A (with minor quantitative differences) when using five-year moving windows. In Fig. 2 (this letter), we show the Sen's slope values and statistical significance (p < 0.05) when reproducing the Zhang et al. approach (Fig. 2A) compared to using the original yearly values without smoothing (Fig. 2B). We see that, as expected based on the simulations shown in Fig. 1, the p-values are generally larger when using unsmoothed data. While the trends in the Southwest (particularly Arizona, southern California, and New Mexico) are generally positive, the results at many stations are no longer statistically significant at the 0.05 level (Fig. 2B). Fig. 3 (this letter) shows how the p-values and Sen's slope values compare. Many of the p-values under the smoothed data are bunched near zero, as also seen in the simulation. For the Sen's slope values, there seems to be a systematic pattern that the values are larger when using smoothed data. This was not seen in the simulation, so it's not clear if this is a systematic effect of smoothing, but given the assumptions behind the Sen's slope estimator, we have more confidence in the slope estimates from the unsmoothed data.
+
+```{r, echo=FALSE}
+
+stnInfo <- read.table('used-zhang.txt', sep = ' ')
+names(stnInfo) <- c('id','lon','lat')
+stns <- stnInfo$id
+
+spells <- list()
+length(spells) <- length(stns)
+
+window <- 5
+
+p <- length(stns)
+
+yrs <- 1976:2019
+dryLen <- matrix(as.numeric(NA), p, length(yrs))
+dryLen_smooth <- matrix(as.numeric(NA), p, length(yrs)-window+1)
+colnames(dryLen) <- yrs
+
+options(warn = -1)  # suppress modifiedmk warnings about missing values
+
+for(stnIdx in seq_along(stns)) {
+    stn <- stns[stnIdx]
+    ## These RData files have the raw precip data extracted from the GHCN files
+    ## using separate R code (not shown here).
+    fn <- file.path('..', 'prep_ghcn', 'extract', paste0('prcp_station', stn, '.RData'))
+    load(fn)
+    data <- data[data$zhang.year %in% yrs, ]
+    
+    data_by_year <- split(data, data$zhang.year)
+    miss <- sapply(data_by_year, function(x) sum(!is.na(x$daily.precip.vec)))
+    ## Exclude years with fewer than 348 observations
+    missing_years <- as.numeric(names(miss)[miss < 347])
+    ## Set remaining missing values to 0 precipication
+    data$daily.precip.vec[is.na(data$daily.precip.vec)] <- 0
+    ## Set dates of missing years to NA so that dry periods overlapping
+    ## missing years are excluded
+    data$time.var[data$zhang.year %in% missing_years] <- NA
+    ## Wet days are those with at least 3 mm precipitation
+    events <- data[data$daily.precip.vec > 3, ]
+    events$time.var <- as.Date(events$time.var)
+
+    n <- nrow(events)
+    ## Determine number of days between wet days
+    events$len[2:n] <- difftime(events$time.var[2:n], events$time.var[1:(n-1)])-1
+    ## Exclude intervals involving missing years, those greater than 300 days and consecutive rainfall days
+    events <- events[!is.na(events$len) & events$len <= 300 & events$len != 0, ]
+
+    ## Average dry length by year (some years have no events, so not assigned)
+    tmp <- sapply(split(events, events$zhang.year),
+                  function(x) mean(x$len, na.rm = TRUE))
+    dryLen[stnIdx, names(tmp)] <- tmp
+
+    ## 5-year sliding window moving average
+    dryLen_smooth[stnIdx, ] <- ma(dryLen[stnIdx, ], n = window)
+    
+}
+
+analyze_trend <- function(data, scaling = 10) {
+   tmp <- modifiedmk::mkttest(data)
+   return(list(sens_slope = tmp[2]*scaling,
+               pvalue = tmp[5]))
+}
+  
+trend_raw <- apply(dryLen, 1, analyze_trend)
+sens_raw <- sapply(trend_raw, `[[`, 1)
+pvalues_raw <- sapply(trend_raw, `[[`, 2)
+
+trend_smooth <- apply(dryLen_smooth, 1, analyze_trend)
+sens_smooth <- sapply(trend_smooth, `[[`, 1)
+pvalues_smooth <- sapply(trend_smooth, `[[`, 2)
+
+## Don't allow circles to get very small. Not sure how exactly this was done in Zhang et al.
+cutoff <- 0.5
+sens_raw_thr <- sens_raw
+sens_raw_thr[abs(sens_raw_thr) < cutoff] <- cutoff*sign(sens_raw_thr[abs(sens_raw_thr) < cutoff])
+
+sign_raw <- rep("-", length(sens_raw))
+sign_raw[sens_raw > 0] <- "+"
+
+
+
+sens_smooth_thr <- sens_smooth
+sens_smooth_thr[abs(sens_smooth_thr) < cutoff] <- cutoff*sign(sens_smooth_thr[abs(sens_smooth_thr) < cutoff])
+sign_smooth <- rep("-", length(sens_smooth))
+sign_smooth[sens_smooth > 0] <- "+"
+
+```{r, echo=FALSE, fig.height=9, fig.cap="Trend analysis of annual mean dry interval length using Sen's slope (days per decade) and Mann-Kendall test significance (p < 0.05), reproducing Zhang et al. Figure 3A using (a) five-year sliding window values as in Zhang et al. and (b) original year-specific values (b). Trends whose absolute Sen's slope value is less than 0.5 are set to 0.5 to avoid having points that cannot be seen."}
+library(ggplot2)
+library(maps)
+
+
+dat <- data.frame(x = stnInfo[,'lon'], y = stnInfo[,'lat'], trend = sens_smooth_thr, sign = sign_smooth, significance = pvalues_smooth < .05)
+
+p1 <- ggplot(dat, aes(x=x, y=y)) + geom_point(aes(color = sign, size = trend, shape = significance)) +
+scale_color_manual(values = c("blue","red")) + scale_shape_manual(values = c(21,16)) + scale_size_area(limits = c(-4.1,11), breaks = c(5,10)) +
+xlab(label = '') + ylab(label = '') + theme_minimal() + borders('state', xlim = c(-125,-102), ylim = c(32,50)) +
+coord_map(xlim = c(-125,-102), ylim = c(32,50)) + ggtitle("(a) Trend analysis using five-year sliding window values")
+
+dat <- data.frame(x = stnInfo[,'lon'], y = stnInfo[,'lat'], trend = sens_raw_thr, sign = sign_raw, significance = pvalues_raw < .05)
+
+p2 <- ggplot(dat, aes(x=x, y=y)) + geom_point(aes(color = sign, size = trend, shape = significance)) +
+scale_color_manual(values = c("blue","red")) + scale_shape_manual(values = c(21,16)) + scale_size_area(limits = c(-4.1,11), breaks = c(5,10)) +
+xlab(label = '') + ylab(label = '') + theme_minimal() + borders('state', xlim = c(-125,-102), ylim = c(32,50)) +
+coord_map(xlim = c(-125,-102), ylim = c(32,50)) + ggtitle("(b) Trend analysis using year-specific values")
+
+gridExtra::grid.arrange(p1, p2, nrow = 2, ncol = 1)
+```
+
+```{r, echo = FALSE, fig.cap="Comparison of (a) p-values and (b) Sen's slope values based on year-specific data and smoothed endent data and smoothed (five-year overlapping moving windows) data.", fig.height=4}
+par(mfrow = c(1,2), mgp = c(1.8, 0.7, 0))
+plot(pvalues_raw, pvalues_smooth, xlab = "p-values, yearly data", main = "(a) p values",
+     ylab = "p-values, smoothed values", pch = 16, cex = 0.7)
+abline(0,1)
+plot(sens_raw, sens_smooth, xlab = "Sen's slope, yearly data", main = "(b) Sen's slope",
+     ylab = "Sen's slope, smoothed data", pch = 16, cex = 0.7)
+abline(0,1)
+```
+
+This use of smoothing before statistical analysis of trends appears to occur throughout the work. Clearly this introduces questions about the station-specific  trend and significance results in Figures 1 and 3 and related figures in the supplemental materials. In addition, the authors report apparently similar analyses at the regional level, e.g., Figures 2 and 4. (We suspect the regional analyses average over all stations in each region at the annual/seasonal level, but we are not sure.) For example, Fig. 4 apparently uses the five-year moving window averages of the mean values and five-year moving window CV values and then computes Sen's slope and uses the Mann-Kendall test to compute p-values. Of course some time window is needed to compute the CV, but doing this using overlapping windows as opposed to adjacent, non-overlapping windows introduces the same concerns about inducing correlation. 
+
+Given the clear inflation of significance caused by smoothing, and somewhat increased slope estimates, what can we conclude about the scientific results presented in Zhang et al.? First, the station-specific uncertainty is clearly quite a bit larger than presented. This may not be surprising given we would expect a low signal to noise ratio in estimating dry intervals (and related quantities) from precipitation values, which are of course quite variable at the daily level. Second, in much of the western U.S. there are not clear patterns in trends of mean dry interval, apart from the Southwest and possibly the northern Great Plains (Fig. 2). The northern Great Plains show consistent decreases in dry interval lengths, although only a limited number of stations are individually significant. Stations in Arizona show statistically significant increases in dry interval lengths, but similar increases elsewhere in the Southwest are generally not significant.
+
+To draw more robust conclusions, ideally one would adjust the p-values in light of the multiple testing from doing analyses at multiple stations (e.g., the well-known false discovery rate procedure of Benjamini and Hochberg 1995), or carry out a joint statistical analysis of all the stations simultaneously in a way that accounts for the spatial correlation structure. These are not easy tasks given the strong spatial correlation, complicated by the real-world effects of topography and weather patterns that produce nonstationary spatial correlation structure. There is consistent evidence from the multiple testing literature that when there is positive correlation, if one uses adjustment procedures such as Benjamini and Hochberg (1995) that assume independent p-values, the number of tests found to be significant is conservative (i.e., one should flag more tests as being significant than the procedure does) (Fithian and Lei 2020). While there is statistical literature on spatial multiple testing (e.g., Sun et al. 2015, Risser et al. 2019), there is not a well-developed general methodology for doing so with spatially-correlated p-values. In this example, applying the Benjamini and Hochberg procedure flags no locations as significant, which is not helpful, given it is likely conservative but to an unknown degree. However, 11.5% of the locations are  individually significant, greater than expected under the full null hypothesis of no trend anywhere. One could do formal field significance test, but that would not allow us to make any formal inference about where the trends are notable. From a general perspective, the spatial clustering of the trend estimates gives some indication that there may be a more robust signal of trend in the Southwest U.S. than simply considering the raw p-values would indicate. Furthermore, such increases are consistent with future projections of decreased precipitation in the Southwest U.S. and in Mexico due to the poleward shift in the Hadley Circulation (Easterling et al. 2017) and associated changes in weather types (Prein et al. 2016). Given the limitations of p-values for making affirmative claims about hypotheses (in contrast to being able to reject a null hypothesis) (Wasserman and Lazar 2016), the reduced statistical significance presented here is not grounds for rejecting the hypothesis that Southwest drought is already increasing. At the same time, without a clear statistical procedure that takes account of the spatial context, it's not clear how robust the trends in the Southwest are. 
+
+
+## References (incomplete)
+
+Fithian, W. and Lei, L., 2020. Conditional calibration for false discovery rate control under dependence. arXiv preprint arXiv:2007.10438.
+
+Hamed, K. H., & Rao, A. R. (1998). A modified Mann-Kendall trend test for autocorrelated data. Journal of hydrology, 204(1-4), 182-196.
+
+Yue, S., Pilon, P., Phinney, B. and Cavadias, G., 2002. The influence of autocorrelation on the ability to detect trend in hydrological series. Hydrological processes, 16(9), pp.1807-1829.
+
+Hamed, K.H., 2009. Exact distribution of the Mann–Kendall trend test statistic for persistent data. Journal of hydrology, 365(1-2), pp.86-94.
+
+Easterling, D.R., K.E. Kunkel, J.R. Arnold, T. Knutson, A.N. LeGrande, L.R. Leung, R.S. Vose, D.E. Waliser, and M.F. Wehner, 2017: Precipitation change in the United States. In: Climate Science Special Report: Fourth National Climate Assessment, Volume I [Wuebbles, D.J., D.W. Fahey, K.A. Hibbard, D.J. Dokken, B.C. Stewart, and T.K. Maycock (eds.)]. U.S. Global Change Research Program, Washington, DC, USA, pp. 207-230, doi: 10.7930/J0H993CC. 
+
+Prein, A. F., Holland, G. J., Rasmussen, R. M., Clark, M. P., and Tye, M. R. (2016), Running dry: The U.S. Southwest's drift into a drier climate state, Geophys. Res. Lett., 43, 1272– 1279, doi:10.1002/2015GL066727. 
+
+Ronald L. Wasserstein & Nicole A. Lazar (2016) The ASA Statement on p-Values: Context, Process, and Purpose, The American Statistician, 70:2, 129-133, DOI: 10.1080/00031305.2016.1154108
